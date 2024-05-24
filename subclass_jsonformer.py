@@ -55,21 +55,26 @@ class BatchedJsonformer(Jsonformer):
         )
 
         return prompt
-
+    
     def generate_number(self, temperature: Union[float, None] = None, iterations=0):
-        input_tokens = [self.tokenizer.encode(self.get_prompt(i), return_tensors="pt").to(self.model.device) for i in range(len(self.prompts))]
-        input_tokens = torch.cat(input_tokens, dim=0)
-        self.debug("[generate_number]", input_tokens, is_prompt=True)
+        prompts = [self.get_prompt(i) for i in range(len(self.prompts))]
+        padded_inputs = self.tokenizer(prompts, return_tensors="pt", padding="longest", truncation=True).to(self.model.device)
+        input_ids = padded_inputs["input_ids"]
+        attention_mask = padded_inputs["attention_mask"]
+        self.debug("[generate_number]", input_ids, is_prompt=True)
         
+        # Batch processing
         response = self.model.generate(
-            input_tokens,
+            input_ids,
+            attention_mask=attention_mask,
             max_new_tokens=self.max_number_tokens,
             num_return_sequences=1,
             logits_processor=[self.number_logit_processor],
             stopping_criteria=[
-                NumberStoppingCriteria(self.tokenizer, len(input_tokens[0])) # TODO
+                NumberStoppingCriteria(self.tokenizer, len(input_ids[0]))
             ],
             temperature=temperature or self.temperature,
+            do_sample=True,
             pad_token_id=self.tokenizer.eos_token_id,
         )
         
@@ -88,11 +93,15 @@ class BatchedJsonformer(Jsonformer):
         return results
 
     def generate_boolean(self) -> List[bool]:
-        input_tokens = [self.tokenizer.encode(self.get_prompt(i), return_tensors="pt").to(self.model.device) for i in range(len(self.prompts))]
-        input_tokens = torch.cat(input_tokens, dim=0)
-        self.debug("[generate_boolean]", input_tokens, is_prompt=True)
+        prompts = [self.get_prompt(i) for i in range(len(self.prompts))]
+        padded_inputs = self.tokenizer(prompts, return_tensors="pt", padding="longest", truncation=True).to(self.model.device)
 
-        output = self.model.forward(input_tokens)
+        input_ids = padded_inputs["input_ids"]
+        attention_mask = padded_inputs["attention_mask"]
+        self.debug("[generate_boolean]", input_ids, is_prompt=True)
+
+        # Batch processing
+        output = self.model(input_ids, attention_mask=attention_mask)
         logits = output.logits[:, -1, :]
 
         true_token_id = self.tokenizer.convert_tokens_to_ids("true")
@@ -104,17 +113,23 @@ class BatchedJsonformer(Jsonformer):
         return results
 
     def generate_string(self) -> List[str]:
-        input_tokens = [self.tokenizer.encode(self.get_prompt(i) + '"', return_tensors="pt").to(self.model.device) for i in range(len(self.prompts))]
-        input_tokens = torch.cat(input_tokens, dim=0)
-        self.debug("[generate_string]", input_tokens, is_prompt=True)
+        prompts = [self.get_prompt(i) for i in range(len(self.prompts))]
+        padded_inputs = self.tokenizer(prompts, return_tensors="pt", padding="longest", truncation=True).to(self.model.device)
 
+        input_ids = padded_inputs["input_ids"]
+        attention_mask = padded_inputs["attention_mask"]
+        self.debug("[generate_string]", input_ids, is_prompt=True)
+
+        # Batch processing
         response = self.model.generate(
-            input_tokens,
+            input_ids,
+            attention_mask=attention_mask,
             max_new_tokens=self.max_string_token_length,
             num_return_sequences=1,
             temperature=self.temperature,
+            do_sample=True,
             stopping_criteria=[
-                StringStoppingCriteria(self.tokenizer, len(input_tokens[0]))
+                StringStoppingCriteria(self.tokenizer, len(input_ids[0]))
             ],
             pad_token_id=self.tokenizer.eos_token_id,
         )
@@ -122,10 +137,10 @@ class BatchedJsonformer(Jsonformer):
         responses = []
         for i, resp in enumerate(response):
             if (
-                len(resp) >= len(input_tokens[i])
-                and (resp[: len(input_tokens[i])] == input_tokens[i]).all()
+                len(resp) >= len(input_ids[i])
+                and (resp[: len(input_ids[i])] == input_ids[i]).all()
             ):
-                resp = resp[len(input_tokens[i]):]
+                resp = resp[len(input_ids[i]):]
             if resp.shape[0] == 1:
                 resp = resp[0]
 
@@ -148,11 +163,13 @@ class BatchedJsonformer(Jsonformer):
             for i in range(len(self.prompts)):
                 obj_list[i].append(elements[i])
 
-            input_prompts = [self.get_prompt(i) for i in range(len(self.prompts))]
-            input_tokens = [self.tokenizer.encode(prompt, return_tensors="pt").to(self.model.device) for prompt in input_prompts]
-            input_tokens = torch.cat(input_tokens, dim=0)
+            prompts = [self.get_prompt(i) for i in range(len(self.prompts))]
+            padded_inputs = self.tokenizer(prompts, return_tensors="pt", padding="longest", truncation=True).to(self.model.device)
 
-            output = self.model.forward(input_tokens)
+            input_ids = padded_inputs["input_ids"]
+            attention_mask = padded_inputs["attention_mask"]
+
+            output = self.model(input_ids, attention_mask=attention_mask)
             logits = output.logits[:, -1, :]
 
             top_indices = logits.topk(30).indices
@@ -175,14 +192,13 @@ class BatchedJsonformer(Jsonformer):
                 break
 
         return obj_list
-    
+
     def generate_object(
         self, properties: Dict[str, Any], obj_list: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         for key, schema in properties.items():
             self.debug("[generate_object] generating value for", key)
-            # obj[key] = self.generate_value(schema, obj, key)
-            values = self.generate_value(schema, obj_list, key) # TODO
+            values = self.generate_value(schema, obj_list, key)
             for i, value in enumerate(values):
                 obj_list[i][key] = value
         return obj_list
@@ -196,48 +212,39 @@ class BatchedJsonformer(Jsonformer):
         schema_type = schema["type"]
         if schema_type == "number":
             if key:
-                # obj_list[i][key] = self.generation_marker for i in range(len(obj_list))
                 for i in range(len(obj_list)):
                     obj_list[i][key] = self.generation_marker
             else:
-                # obj.append(self.generation_marker)
                 for i in range(len(obj_list)):
                     obj_list[i].append(self.generation_marker)
             return self.generate_number()
         elif schema_type == "boolean":
             if key:
-                # obj[key] = self.generation_marker
                 for i in range(len(obj_list)):
                     obj_list[i][key] = self.generation_marker
             else:
-                # obj.append(self.generation_marker)
                 for i in range(len(obj_list)):
                     obj_list[i].append(self.generation_marker)
             return self.generate_boolean()
         elif schema_type == "string":
             if key:
-                # obj[key] = self.generation_marker
                 for i in range(len(obj_list)):
                     obj_list[i][key] = self.generation_marker
             else:
-                # obj.append(self.generation_marker)
                 for i in range(len(obj_list)):
                     obj_list[i].append(self.generation_marker)
             return self.generate_string()
         elif schema_type == "array":
             new_arrays = [[]*len(obj_list)]
-            # obj[key] = new_array
             for i in range(len(obj_list)):
                 obj_list[i][key] = new_arrays[i]
             return self.generate_array(schema["items"], new_arrays)
         elif schema_type == "object":
             new_objs = [{} for _ in range(len(obj_list))]
             if key:
-                # obj[key] = new_obj
                 for i in range(len(obj_list)):
                     obj_list[i][key] = new_objs[i]
             else:
-                # obj.append(new_obj)
                 for i in range(len(obj_list)):
                     obj_list[i].append(new_objs[i])
             return self.generate_object(schema["properties"], new_objs)
