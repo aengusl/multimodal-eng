@@ -1,4 +1,4 @@
-from typing import List, Union, Dict, Any
+from typing import List, Union, Dict, Any, Optional
 from transformers import PreTrainedModel, PreTrainedTokenizer
 import json
 import torch
@@ -8,6 +8,66 @@ from jsonformer.logits_processors import (
     OutputNumbersTokens,
     StringStoppingCriteria,
 )
+
+class CogVLMJsonformer(Jsonformer):
+    """
+    CogVLMJsonformer is a subclass of Jsonformer that uses CogVLM models to generate JSON data.
+    """
+    def __init__(self, images: Optional[List["PIL.Image"]] = None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if images is not None:
+            assert len(images) == 1, "VLMJsonformer only supports a single image for now..."
+        self.image = images[0] if images is not None else None
+    
+
+    def generate_string(self) -> str:
+        prompt = self.get_prompt() + '"'
+        self.debug("[generate_string]", prompt, is_prompt=True)
+        build_input_ids = self.model.build_conversation_input_ids(
+            tokenizer=self.tokenizer,
+            query=prompt,
+            images=[self.image],
+            template_version="base",
+        )
+        inputs = {
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
+            'images': [[build_input_ids['images'][0].to(self.model.device)]] if self.image is not None else None,
+        }
+        gen_kwargs = {
+            "max_new_tokens": self.max_string_token_length,
+            "temperature": self.temperature,
+            "pad_token_id": self.tokenizer.eos_token_id,
+            "do_sample": True,
+            "num_return_sequences": 1,
+            "stopping_criteria": [
+                StringStoppingCriteria(self.tokenizer, len(build_input_ids['input_ids'][0]))
+            ],
+        }
+        breakpoint()
+        response = self.model.generate(**inputs, **gen_kwargs)
+        input_tokens = build_input_ids['input_ids'][0]
+
+        # Some models output the prompt as part of the response
+        # This removes the prompt from the response if it is present
+        if (
+            len(response[0]) >= len(input_tokens[0])
+            and (response[0][: len(input_tokens[0])] == input_tokens).all()
+        ):
+            response = response[0][len(input_tokens[0]) :]
+        if response.shape[0] == 1:
+            response = response[0]
+
+        response = self.tokenizer.decode(response, skip_special_tokens=True)
+
+        self.debug("[generate_string]", "|" + response + "|")
+
+        if response.count('"') < 1:
+            return response
+
+        return response.split('"')[0].strip()
+    
 
 class BatchedJsonformer(Jsonformer):
     """
