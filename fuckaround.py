@@ -105,11 +105,16 @@ car = {
 }
 
 # builder = Jsonformer(
+
+from PIL import Image
+image = Image.open("/root/multimodal-eng/pics_of_mates_faces/Screenshot_2020_04_06_at_151459__.png").convert('RGB')
+
 builder = CogVLMJsonformer(
     model=model,
     tokenizer=tokenizer,
     json_schema=car,
     prompt="Generate an example car",
+    # images=[image],
 )
 
 print("Generating...")

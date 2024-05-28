@@ -168,3 +168,4 @@ cython_debug/
 CogVLM2/
 gpt-fast/
 jsonformer/
+.vscode/

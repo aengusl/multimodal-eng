@@ -26,14 +26,15 @@ class CogVLMJsonformer(Jsonformer):
         build_input_ids = self.model.build_conversation_input_ids(
             tokenizer=self.tokenizer,
             query=prompt,
-            images=[self.image],
+            images=[self.image] if self.image is not None else None,
             template_version="base",
         )
+        input_tokens = build_input_ids['input_ids'].to(self.model.device)
         inputs = {
-            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(self.model.device),
-            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(self.model.device),
-            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
-            'images': [[build_input_ids['images'][0].to(self.model.device)]] if self.image is not None else None,
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
+            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
         }
         gen_kwargs = {
             "max_new_tokens": self.max_string_token_length,
@@ -42,20 +43,19 @@ class CogVLMJsonformer(Jsonformer):
             "do_sample": True,
             "num_return_sequences": 1,
             "stopping_criteria": [
-                StringStoppingCriteria(self.tokenizer, len(build_input_ids['input_ids'][0]))
+                StringStoppingCriteria(self.tokenizer, len(input_tokens))
             ],
         }
-        breakpoint()
+
         response = self.model.generate(**inputs, **gen_kwargs)
-        input_tokens = build_input_ids['input_ids'][0]
 
         # Some models output the prompt as part of the response
         # This removes the prompt from the response if it is present
         if (
-            len(response[0]) >= len(input_tokens[0])
-            and (response[0][: len(input_tokens[0])] == input_tokens).all()
+            len(response[0]) >= len(input_tokens)
+            and (response[0][: len(input_tokens)] == input_tokens).all()
         ):
-            response = response[0][len(input_tokens[0]) :]
+            response = response[0][len(input_tokens) :]
         if response.shape[0] == 1:
             response = response[0]
 
