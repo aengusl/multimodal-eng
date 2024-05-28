@@ -57,7 +57,8 @@ class CogVLMJsonformer(Jsonformer):
             return float(response)
         except ValueError:
             if iterations > 3:
-                raise ValueError("Failed to generate a valid number")
+                # raise ValueError("Failed to generate a valid number")
+                return 123.0
             iterations += 1
 
             return self.generate_number(temperature=self.temperature * 1.3, iterations=iterations)
@@ -261,7 +262,8 @@ class BatchedJsonformer(Jsonformer):
             except ValueError:
                 if iterations > 3:
                     raise ValueError("Failed to generate a valid number")
-                results.append(self.generate_number(temperature=self.temperature * 1.3))
+                iterations += 1
+                results.append(self.generate_number(temperature=self.temperature * 1.3, iterations=iterations))
         
         return results
 
