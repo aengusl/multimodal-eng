@@ -20,6 +20,63 @@ class CogVLMJsonformer(Jsonformer):
         self.image = images[0] if images is not None else None
     
 
+    def generate_number(self, temperature: Union[float, None] = None, iterations=0):
+        prompt = self.get_prompt()
+        self.debug("[generate_number]", prompt, is_prompt=True)
+        # input_tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(
+        #     self.model.device
+        # )
+        # response = self.model.generate(
+        #     input_tokens,
+        #     max_new_tokens=self.max_number_tokens,
+        #     num_return_sequences=1,
+        #     logits_processor=[self.number_logit_processor],
+        #     stopping_criteria=[
+        #         NumberStoppingCriteria(self.tokenizer, len(input_tokens[0]))
+        #     ],
+        #     temperature=temperature or self.temperature,
+        #     pad_token_id=self.tokenizer.eos_token_id,
+        # )
+        build_input_ids = self.model.build_conversation_input_ids(
+            tokenizer=self.tokenizer,
+            query=prompt,
+            images=[self.image] if self.image is not None else None,
+            template_version="base",
+        )
+        input_tokens = build_input_ids['input_ids'].to(self.model.device)
+        inputs = {
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
+            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
+        }
+        gen_kwargs = {
+            "max_new_tokens": self.max_number_tokens,
+            "temperature": temperature or self.temperature,
+            "pad_token_id": self.tokenizer.eos_token_id,
+            "logits_processor": [self.number_logit_processor],
+            "do_sample": True,
+            "num_return_sequences": 1,
+            "stopping_criteria": [
+                StringStoppingCriteria(self.tokenizer, len(input_tokens))
+            ],
+        }
+        breakpoint()
+        response = self.model.generate(**inputs, **gen_kwargs)
+        response = self.tokenizer.decode(response[0], skip_special_tokens=True)
+
+        response = response[len(prompt) :]
+        response = response.strip().rstrip(".")
+        self.debug("[generate_number]", response)
+        try:
+            return float(response)
+        except ValueError:
+            if iterations > 3:
+                raise ValueError("Failed to generate a valid number")
+            iterations += 1
+
+            return self.generate_number(temperature=self.temperature * 1.3, iterations=iterations)
+        
     def generate_string(self) -> str:
         prompt = self.get_prompt() + '"'
         self.debug("[generate_string]", prompt, is_prompt=True)
@@ -46,7 +103,7 @@ class CogVLMJsonformer(Jsonformer):
                 StringStoppingCriteria(self.tokenizer, len(input_tokens))
             ],
         }
-
+        breakpoint()
         response = self.model.generate(**inputs, **gen_kwargs)
 
         # Some models output the prompt as part of the response
