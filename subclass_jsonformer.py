@@ -23,20 +23,6 @@ class CogVLMJsonformer(Jsonformer):
     def generate_number(self, temperature: Union[float, None] = None, iterations=0):
         prompt = self.get_prompt()
         self.debug("[generate_number]", prompt, is_prompt=True)
-        # input_tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(
-        #     self.model.device
-        # )
-        # response = self.model.generate(
-        #     input_tokens,
-        #     max_new_tokens=self.max_number_tokens,
-        #     num_return_sequences=1,
-        #     logits_processor=[self.number_logit_processor],
-        #     stopping_criteria=[
-        #         NumberStoppingCriteria(self.tokenizer, len(input_tokens[0]))
-        #     ],
-        #     temperature=temperature or self.temperature,
-        #     pad_token_id=self.tokenizer.eos_token_id,
-        # )
         build_input_ids = self.model.build_conversation_input_ids(
             tokenizer=self.tokenizer,
             query=prompt,
@@ -61,7 +47,6 @@ class CogVLMJsonformer(Jsonformer):
                 StringStoppingCriteria(self.tokenizer, len(input_tokens))
             ],
         }
-        breakpoint()
         response = self.model.generate(**inputs, **gen_kwargs)
         response = self.tokenizer.decode(response[0], skip_special_tokens=True)
 
@@ -103,7 +88,6 @@ class CogVLMJsonformer(Jsonformer):
                 StringStoppingCriteria(self.tokenizer, len(input_tokens))
             ],
         }
-        breakpoint()
         response = self.model.generate(**inputs, **gen_kwargs)
 
         # Some models output the prompt as part of the response
@@ -125,6 +109,78 @@ class CogVLMJsonformer(Jsonformer):
 
         return response.split('"')[0].strip()
     
+    def generate_boolean(self) -> bool: #TODO
+        prompt = self.get_prompt() + '"'
+        self.debug("[generate_string]", prompt, is_prompt=True)
+        build_input_ids = self.model.build_conversation_input_ids(
+            tokenizer=self.tokenizer,
+            query=prompt,
+            images=[self.image] if self.image is not None else None,
+            template_version="base",
+        )
+        inputs = {
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
+            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
+        }
+        output = self.model.forward(**inputs)
+        logits = output.logits[0, -1]
+
+        true_token_id = self.tokenizer.convert_tokens_to_ids("true")
+        false_token_id = self.tokenizer.convert_tokens_to_ids("false")
+
+        result = logits[true_token_id] > logits[false_token_id]
+
+        self.debug("[generate_boolean]", result)
+
+        return result.item()
+    
+
+    def generate_array(self, item_schema: Dict[str, Any], obj: Dict[str, Any]) -> list:
+        for _ in range(self.max_array_length):
+            # forces array to have at least one element
+            element = self.generate_value(item_schema, obj)
+            obj[-1] = element
+
+            obj.append(self.generation_marker)
+            input_prompt = self.get_prompt()
+            obj.pop()
+            build_input_ids = self.model.build_conversation_input_ids(
+            tokenizer=self.tokenizer,
+            query=input_prompt,
+            images=[self.image] if self.image is not None else None,
+            template_version="base",
+            )
+            inputs = {
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
+            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
+            }
+            output = self.model.forward(**inputs)
+            logits = output.logits[0, -1]
+
+
+            top_indices = logits.topk(30).indices
+            sorted_token_ids = top_indices[logits[top_indices].argsort(descending=True)]
+
+            found_comma = False
+            found_close_bracket = False
+
+            for token_id in sorted_token_ids:
+                decoded_token = self.tokenizer.decode(token_id)
+                if ',' in decoded_token:
+                    found_comma = True
+                    break
+                if ']' in decoded_token:
+                    found_close_bracket = True
+                    break
+
+            if found_close_bracket or not found_comma:
+                break
+
+        return obj
 
 class BatchedJsonformer(Jsonformer):
     """
