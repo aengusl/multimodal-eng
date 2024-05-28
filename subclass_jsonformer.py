@@ -31,10 +31,10 @@ class CogVLMJsonformer(Jsonformer):
         )
         input_tokens = build_input_ids['input_ids'].to(self.model.device)
         inputs = {
-            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
-            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
-            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
-            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
+            'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
         }
         gen_kwargs = {
             "max_new_tokens": self.max_number_tokens,
@@ -58,7 +58,7 @@ class CogVLMJsonformer(Jsonformer):
         except ValueError:
             if iterations > 3:
                 # raise ValueError("Failed to generate a valid number")
-                return 123.0
+                return 123.0 # TODO: hardcode
             iterations += 1
 
             return self.generate_number(temperature=self.temperature * 1.3, iterations=iterations)
@@ -74,10 +74,10 @@ class CogVLMJsonformer(Jsonformer):
         )
         input_tokens = build_input_ids['input_ids'].to(self.model.device)
         inputs = {
-            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
-            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
-            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
-            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
+            'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
         }
         gen_kwargs = {
             "max_new_tokens": self.max_string_token_length,
@@ -90,6 +90,7 @@ class CogVLMJsonformer(Jsonformer):
             ],
         }
         response = self.model.generate(**inputs, **gen_kwargs)
+
 
         # Some models output the prompt as part of the response
         # This removes the prompt from the response if it is present
@@ -110,7 +111,7 @@ class CogVLMJsonformer(Jsonformer):
 
         return response.split('"')[0].strip()
     
-    def generate_boolean(self) -> bool: #TODO
+    def generate_boolean(self) -> bool:
         prompt = self.get_prompt() + '"'
         self.debug("[generate_string]", prompt, is_prompt=True)
         build_input_ids = self.model.build_conversation_input_ids(
@@ -120,10 +121,10 @@ class CogVLMJsonformer(Jsonformer):
             template_version="base",
         )
         inputs = {
-            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
-            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
-            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
-            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
+            'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
         }
         output = self.model.forward(**inputs)
         logits = output.logits[0, -1]
@@ -154,11 +155,11 @@ class CogVLMJsonformer(Jsonformer):
             template_version="base",
             )
             inputs = {
-            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(device=self.model.device),
-            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(device=self.model.device),
-            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(device=self.model.device),
-            'images': [[build_input_ids['images'][0].to(device=self.model.device)]] if self.image is not None else None,
-            }
+            'input_ids': build_input_ids['input_ids'].unsqueeze(0).to(self.model.device),
+            'token_type_ids': build_input_ids['token_type_ids'].unsqueeze(0).to(self.model.device),
+            'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
+            'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
+            } # TODO: hardcode of dtype
             output = self.model.forward(**inputs)
             logits = output.logits[0, -1]
 

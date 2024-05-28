@@ -114,7 +114,7 @@ builder = CogVLMJsonformer(
     tokenizer=tokenizer,
     json_schema=car,
     prompt="Generate an example car",
-    # images=[image],
+    images=[image],
 )
 
 print("Generating...")
