@@ -49,6 +49,7 @@ class CogVLMJsonformer(Jsonformer):
         }
         response = self.model.generate(**inputs, **gen_kwargs)
         response = self.tokenizer.decode(response[0], skip_special_tokens=True)
+        torch.cuda.empty_cache()
 
         response = response[len(prompt) :]
         response = response.strip().rstrip(".")
@@ -90,6 +91,7 @@ class CogVLMJsonformer(Jsonformer):
             ],
         }
         response = self.model.generate(**inputs, **gen_kwargs)
+        torch.cuda.empty_cache()
 
 
         # Some models output the prompt as part of the response
@@ -126,7 +128,8 @@ class CogVLMJsonformer(Jsonformer):
             'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
             'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
         }
-        output = self.model.forward(**inputs)
+        output = self.model.forward(**inputs, use_cache=False)
+        torch.cuda.empty_cache()
         logits = output.logits[0, -1]
 
         true_token_id = self.tokenizer.convert_tokens_to_ids("true")
@@ -160,7 +163,8 @@ class CogVLMJsonformer(Jsonformer):
             'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
             'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
             } # TODO: hardcode of dtype
-            output = self.model.forward(**inputs)
+            output = self.model.forward(**inputs, use_cache=False)
+            torch.cuda.empty_cache()
             logits = output.logits[0, -1]
 
 
