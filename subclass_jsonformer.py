@@ -128,7 +128,8 @@ class CogVLMJsonformer(Jsonformer):
             'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
             'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
         }
-        output = self.model.forward(**inputs, use_cache=False)
+        with torch.no_grad():
+            output = self.model.forward(**inputs, use_cache=False)
         torch.cuda.empty_cache()
         logits = output.logits[0, -1]
 
@@ -163,7 +164,8 @@ class CogVLMJsonformer(Jsonformer):
             'attention_mask': build_input_ids['attention_mask'].unsqueeze(0).to(self.model.device),
             'images': [[build_input_ids['images'][0].to(self.model.device).to(torch.bfloat16)]] if self.image is not None else None,
             } # TODO: hardcode of dtype
-            output = self.model.forward(**inputs, use_cache=False)
+            with torch.no_grad():
+                output = self.model.forward(**inputs, use_cache=False)
             torch.cuda.empty_cache()
             logits = output.logits[0, -1]
 
